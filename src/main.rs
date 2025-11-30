@@ -1,6 +1,5 @@
 use std::path::absolute;
 
-use chrono::Local;
 use clap::Parser;
 use osc8::Hyperlink;
 use url::Url;
@@ -12,54 +11,36 @@ fn main() {
 
     let entries = load_markdown_files();
 
-    if cli.all {
-        for (path, vtodos) in entries {
-            if vtodos.len() > 0 {
-                println!("==== {} ====", path.display());
-                for vtodo in vtodos {
-                    println!("{}", vtodo);
-                }
+    // today undone only
+    for (path, vtodos) in entries {
+        let mut filtered = vec![];
+
+        for vtodo in vtodos {
+            if !cli.show_done && vtodo.checked {
+                continue;
+            }
+            let Some(agmd) = &vtodo.agmd else {
+                continue;
+            };
+            let has_intersection = cli.date_range.filter_agmd_intersection(agmd);
+            if has_intersection {
+                filtered.push(vtodo);
             }
         }
-    } else {
-        let today = Local::now().date_naive();
 
-        // today undone only
-        for (path, vtodos) in entries {
-            let mut filtered = vec![];
-
-            for vtodo in vtodos {
-                if vtodo.checked {
-                    continue;
-                }
-                let Some(agmd) = &vtodo.agmd else {
-                    continue;
-                };
-                let contains_today = match (agmd.start, agmd.due) {
-                    (None, None) => false,
-                    (None, Some(due)) => due >= today,
-                    (Some(start), None) => start <= today,
-                    (Some(start), Some(due)) => (start..=due).contains(&today),
-                };
-                if contains_today {
-                    filtered.push(vtodo);
-                }
-            }
-
-            if filtered.len() > 0 {
-                println!(
-                    "==== {}{}{} ====",
-                    Hyperlink::new(
-                        Url::from_file_path(absolute(&path).unwrap())
-                            .unwrap()
-                            .as_str()
-                    ),
-                    path.display(),
-                    Hyperlink::END
-                );
-                for vtodo in filtered {
-                    println!("{}", vtodo);
-                }
+        if filtered.len() > 0 {
+            println!(
+                "==== {}{}{} ====",
+                Hyperlink::new(
+                    Url::from_file_path(absolute(&path).unwrap())
+                        .unwrap()
+                        .as_str()
+                ),
+                path.display(),
+                Hyperlink::END
+            );
+            for vtodo in filtered {
+                println!("{}", vtodo);
             }
         }
     }
@@ -68,12 +49,18 @@ fn main() {
 mod cli {
     use clap::Parser;
 
+    use crate::date_range::{self, DateRangeFormat};
+
     #[derive(Debug, Parser)]
     pub struct Cli {
-        #[arg(short, long)]
-        pub all: bool,
         #[arg(short('d'), long("done"))]
         pub show_done: bool,
+        #[arg(
+            allow_hyphen_values(true),
+            value_parser = date_range::parse_date_range,
+            default_value_t = DateRangeFormat::default(),
+        )]
+        pub date_range: DateRangeFormat,
     }
 }
 
@@ -148,7 +135,13 @@ mod markdown {
                 match (agmd.start, agmd.due) {
                     (None, Some(due)) => write!(f, "due={due}")?,
                     (Some(start), None) => write!(f, "start={start}")?,
-                    (Some(start), Some(due)) => write!(f, "start={start};due={due}")?,
+                    (Some(start), Some(due)) => {
+                        if start == due {
+                            write!(f, "{start}")?
+                        } else {
+                            write!(f, "start={start};due={due}")?
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -307,7 +300,7 @@ mod syntax {
         // 额外处理一下 YYYY-mm-dd
         // XXX: 未来还是需要更加一致的流程
         let re = Regex::new(r"(\d{4})-(\d{2})-(\d{2})").expect("fail to build regex");
-        if let Some(capture) = re.captures_iter(input).next() {
+        if let Some(capture) = re.captures(input) {
             let year = capture.get(1).unwrap().as_str().parse().unwrap();
             let month = capture.get(2).unwrap().as_str().parse().unwrap();
             let day = capture.get(3).unwrap().as_str().parse().unwrap();
@@ -320,7 +313,7 @@ mod syntax {
 
         let re = Regex::new(r"(\w+)=(\d{4})-(\d{2})-(\d{2})").expect("fail to build regex");
         for component in input.split(";") {
-            let capture = re.captures_iter(component).next()?;
+            let capture = re.captures(component)?;
             let key = capture.get(1).unwrap().as_str();
             // XXX: too many unwrap here
             let year = capture.get(2).unwrap().as_str().parse().unwrap();
@@ -336,5 +329,130 @@ mod syntax {
         }
 
         Some(Agmd { start, due })
+    }
+}
+
+mod date_range {
+    // Allowed formats:
+    //
+    // - `-1`
+    // - `3`
+    // - `+3`
+    // - `-1..3`
+    // - `-1..3`
+    // - `..3`
+    // - `..`
+    //
+    // TODO: use `.` as alias of `0`, e.g. `-1...`
+
+    use std::fmt::Display;
+
+    use chrono::{Local, NaiveDate, TimeDelta};
+    use regex::Regex;
+
+    use crate::syntax::Agmd;
+
+    #[derive(Debug, Clone)]
+    pub enum DateFormat {
+        Relative(i64),
+    }
+
+    impl Display for DateFormat {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                DateFormat::Relative(i) => i.fmt(f),
+            }
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    pub enum DateRangeFormat {
+        Single(DateFormat),
+        Range(Option<DateFormat>, Option<DateFormat>),
+    }
+
+    impl Default for DateRangeFormat {
+        fn default() -> Self {
+            Self::Single(DateFormat::Relative(0))
+        }
+    }
+
+    impl DateRangeFormat {
+        pub fn filter_agmd_intersection(&self, agmd: &Agmd) -> bool {
+            let today = Local::now().date_naive();
+            let absolute = |d: &DateFormat| -> NaiveDate {
+                let DateFormat::Relative(i) = d;
+                today.checked_add_signed(TimeDelta::days(*i)).unwrap()
+            };
+            match self {
+                DateRangeFormat::Single(d) => {
+                    let d = absolute(d);
+                    match (agmd.start, agmd.due) {
+                        (None, None) => false,
+                        (None, Some(due)) => due >= d,
+                        (Some(start), None) => start <= d,
+                        (Some(start), Some(due)) => (start..=due).contains(&d),
+                    }
+                }
+                DateRangeFormat::Range(d1, d2) => {
+                    let d1 = d1.as_ref().map(absolute);
+                    let d2 = d2.as_ref().map(absolute);
+                    match (d1, d2, agmd.start, agmd.due) {
+                        // one of them is infinity
+                        (None, None, _, _) | (_, _, None, None) => true,
+                        (None, _, None, _) | (_, None, _, None) => true,
+                        (None, Some(d2), Some(start), None)
+                        | (None, Some(d2), Some(start), Some(_))
+                        | (Some(_), Some(d2), Some(start), None) => d2 >= start,
+                        (Some(d1), None, None, Some(due))
+                        | (Some(d1), None, Some(_), Some(due))
+                        | (Some(d1), Some(_), None, Some(due)) => d1 <= due,
+                        (Some(d1), Some(d2), Some(start), Some(due)) => d2 >= start && d1 <= due,
+                    }
+                }
+            }
+        }
+    }
+
+    impl Display for DateRangeFormat {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                DateRangeFormat::Single(date_format) => date_format.fmt(f),
+                DateRangeFormat::Range(date_format, date_format1) => {
+                    match (date_format, date_format1) {
+                        (None, None) => write!(f, ".."),
+                        (None, Some(d)) => write!(f, "..{d}"),
+                        (Some(d), None) => write!(f, "{d}.."),
+                        (Some(d), Some(e)) => write!(f, "{d}..{e}"),
+                    }
+                }
+            }
+        }
+    }
+
+    // XXX: use nom
+    pub fn parse_date_range(
+        input: &str,
+    ) -> Result<DateRangeFormat, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        let re1 = Regex::new(r"^[+-]?\d+$").unwrap();
+        let re2 = Regex::new(r"^([+-]?\d+)?..([+-]?\d+)?$").unwrap();
+
+        if let Some(captures) = re1.captures(input) {
+            let n = captures.get(0).unwrap().as_str().parse::<i64>()?;
+            return Ok(DateRangeFormat::Single(DateFormat::Relative(n)));
+        }
+
+        if let Some(captures) = re2.captures(input) {
+            let n = captures
+                .get(1)
+                .and_then(|m| m.as_str().parse::<i64>().ok().map(DateFormat::Relative));
+            let m = captures
+                .get(2)
+                .and_then(|m| m.as_str().parse::<i64>().ok().map(DateFormat::Relative));
+
+            return Ok(DateRangeFormat::Range(n, m));
+        }
+
+        Err("neither single date or range".into())
     }
 }
