@@ -11,20 +11,28 @@ fn main() {
 
     let entries = load_markdown_files();
 
-    // today undone only
     for (path, vtodos) in entries {
         let mut filtered = vec![];
 
         for vtodo in vtodos {
-            if !cli.show_done && vtodo.checked {
+            if !cli.done && vtodo.checked {
                 continue;
             }
-            let Some(agmd) = &vtodo.agmd else {
-                continue;
-            };
-            let has_intersection = cli.date_range.filter_agmd_intersection(agmd);
-            if has_intersection {
-                filtered.push(vtodo);
+            match cli.malformed {
+                true => {
+                    if vtodo.agmd.is_none() {
+                        filtered.push(vtodo);
+                    }
+                }
+                false => {
+                    let Some(agmd) = &vtodo.agmd else {
+                        continue;
+                    };
+                    let has_intersection = cli.date_range.filter_agmd_intersection(agmd);
+                    if has_intersection {
+                        filtered.push(vtodo);
+                    }
+                }
             }
         }
 
@@ -53,8 +61,13 @@ mod cli {
 
     #[derive(Debug, Parser)]
     pub struct Cli {
-        #[arg(short('d'), long("done"))]
-        pub show_done: bool,
+        /// Whether to show malformed.
+        #[arg(short, long)]
+        pub malformed: bool,
+        /// Whether to show done tasks or not.
+        #[arg(short, long)]
+        pub done: bool,
+        /// Date range filter.
         #[arg(
             allow_hyphen_values(true),
             value_parser = date_range::parse_date_range,
