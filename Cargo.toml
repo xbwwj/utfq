@@ -1,0 +1,13 @@
+[package]
+name = "utfq"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chrono = "0.4.42"
+clap = { version = "4.5.53", features = ["derive"] }
+ignore = "0.4.25"
+osc8 = "0.1.0"
+pulldown-cmark = "0.13.0"
+regex = "1.12.2"
+url = "2.5.7"
