@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fs::read_to_string, path::absolute};
 
+use chrono::{Days, NaiveDate};
 use color_eyre::{Result, eyre::Context};
 use either::Either;
 use hyperrat::Link;
@@ -17,6 +18,7 @@ use crate::{cli::Cli, parse::parse_file, walk::build_walk_filtered};
 pub struct App {
     cli: Cli,
     is_running: bool,
+    date: NaiveDate,
     lines: Vec<Either<String, Link<'static>>>,
     offset: usize,
 }
@@ -24,6 +26,7 @@ pub struct App {
 impl App {
     pub fn new(cli: Cli) -> Self {
         Self {
+            date: cli.date,
             cli,
             is_running: true,
             lines: Default::default(),
@@ -87,6 +90,14 @@ impl App {
                     self.offset += 1;
                 }
                 KeyCode::Char('r') => {
+                    self.reload()?;
+                }
+                KeyCode::Left | KeyCode::Char('h') => {
+                    self.date = self.date.checked_sub_days(Days::new(1))?;
+                    self.reload()?;
+                }
+                KeyCode::Right | KeyCode::Char('l') => {
+                    self.date = self.date.checked_add_days(Days::new(1))?;
                     self.reload()?;
                 }
                 _ => {}
