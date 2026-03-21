@@ -1,7 +1,10 @@
 use std::{collections::HashMap, fs::read_to_string, path::absolute};
 
 use chrono::{Days, NaiveDate};
-use color_eyre::{Result, eyre::Context};
+use color_eyre::{
+    Result,
+    eyre::{Context, ContextCompat},
+};
 use either::Either;
 use hyperrat::Link;
 use ratatui::{
@@ -93,11 +96,17 @@ impl App {
                     self.reload()?;
                 }
                 KeyCode::Left | KeyCode::Char('h') => {
-                    self.date = self.date.checked_sub_days(Days::new(1))?;
+                    self.date = self
+                        .date
+                        .checked_sub_days(Days::new(1))
+                        .context("date out of range")?;
                     self.reload()?;
                 }
                 KeyCode::Right | KeyCode::Char('l') => {
-                    self.date = self.date.checked_add_days(Days::new(1))?;
+                    self.date = self
+                        .date
+                        .checked_add_days(Days::new(1))
+                        .context("date out of range")?;
                     self.reload()?;
                 }
                 _ => {}
