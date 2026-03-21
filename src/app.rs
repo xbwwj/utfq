@@ -127,7 +127,7 @@ impl App {
                     let Ok(string) = read_to_string(path) else {
                         continue;
                     };
-                    let new_items = parse_file(&self.cli, &string);
+                    let new_items = parse_file(&self.cli, self.date, &string);
                     collected.insert(path.to_path_buf(), new_items);
                 }
                 Err(err) => eprintln!("ERROR: {}", err),

@@ -1,9 +1,11 @@
+use chrono::NaiveDate;
+
 use crate::cli::Cli;
 
 /// 解析文件，同时生成链接。
-pub fn parse_file(cli: &Cli, text: &str) -> Vec<String> {
+pub fn parse_file(cli: &Cli, date: NaiveDate, text: &str) -> Vec<String> {
     let mut items = vec![];
-    let agmd_str = format!("<agmd:{}>", cli.date);
+    let agmd_str = format!("<agmd:{}>", date);
 
     if !text.contains("<agmd:") {
         return items;
