@@ -11,7 +11,7 @@ use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, KeyCode},
     layout::Rect,
-    style::Style,
+    style::{Style, Stylize},
     text::Span,
 };
 use url::Url;
@@ -76,8 +76,17 @@ impl App {
                 }
             }
         }
-
-        // frame.render_widget(greeting, frame.area());
+        if area.width > 10 {
+            frame.render_widget(
+                Span::from(self.date.to_string()).reversed(),
+                Rect {
+                    x: area.x + area.width - 10,
+                    y: area.y,
+                    width: 10,
+                    height: 1,
+                },
+            );
+        }
     }
 
     pub fn handle_event(&mut self) -> Result<()> {
