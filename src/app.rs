@@ -102,9 +102,11 @@ impl App {
                     self.offset += 1;
                 }
                 KeyCode::Char('r') => {
+                    self.offset = 0;
                     self.reload()?;
                 }
                 KeyCode::Left | KeyCode::Char('h') => {
+                    self.offset = 0;
                     self.date = self
                         .date
                         .checked_sub_days(Days::new(1))
@@ -112,6 +114,7 @@ impl App {
                     self.reload()?;
                 }
                 KeyCode::Right | KeyCode::Char('l') => {
+                    self.offset = 0;
                     self.date = self
                         .date
                         .checked_add_days(Days::new(1))
