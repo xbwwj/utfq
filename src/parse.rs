@@ -12,6 +12,9 @@ pub fn parse_file(cli: &Cli, date: NaiveDate, text: &str) -> Vec<String> {
     }
 
     for line in text.lines() {
+        if line.starts_with("<!--") {
+            continue;
+        }
         let mut matched = false;
         match cli.all {
             true => {
