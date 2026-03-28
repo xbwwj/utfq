@@ -24,12 +24,15 @@ pub struct App {
     date: NaiveDate,
     lines: Vec<Either<String, Link<'static>>>,
     offset: usize,
+    /// Whether to show done items.
+    done: bool,
 }
 
 impl App {
     pub fn new(cli: Cli) -> Self {
         Self {
             date: cli.date,
+            done: cli.done,
             cli,
             is_running: true,
             lines: Default::default(),
@@ -121,6 +124,12 @@ impl App {
                         .context("date out of range")?;
                     self.reload()?;
                 }
+                KeyCode::Char('d') => {
+                    self.done = !self.done;
+                    // PERF: change done visibility should not reload.
+                    // this should be moved to render, but large refactor is required.
+                    self.reload()?;
+                }
                 _ => {}
             }
         }
@@ -159,12 +168,18 @@ impl App {
             let relative_path = path.strip_prefix(".").unwrap_or(path);
             let url = Url::from_file_path(absolute(path).unwrap()).unwrap();
 
-            self.lines.push(Either::Right(
-                Link::new(relative_path.display().to_string(), url.to_string())
-                    .style(Style::default().bold()),
-            ));
+            // only show path if have one more item
+            if self.done || items.iter().any(|i| !i.0) {
+                self.lines.push(Either::Right(
+                    Link::new(relative_path.display().to_string(), url.to_string())
+                        .style(Style::default().bold()),
+                ));
+            }
 
-            for item in items {
+            for (done, item) in items {
+                if !self.done && *done {
+                    continue;
+                }
                 self.lines.push(Either::Left(format!("  {}", item.trim())));
             }
         }
